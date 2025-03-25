@@ -1,0 +1,8 @@
+compile_commands.json
+celestial-globe
+*.dat 
+*.csv
+!constellations.csv
+*.html
+FK6.txt
+vgcore*
