@@ -1,4 +1,5 @@
 #include <raylib.h>
+#include <raymath.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,9 +8,9 @@
 #include <libnova/libnova.h>
 
 // #define NUM_STARS 118218
-#define STAR_DIST 20
-#define MIN_RADIUS 0.01
-#define MAX_RADIUS 0.5
+#define STAR_DIST 100
+#define MIN_RADIUS 5.0 / STAR_DIST
+#define MAX_RADIUS 20 * MIN_RADIUS
 
 typedef struct star_data {
     double ra;  // Right ascension in radians
@@ -18,12 +19,7 @@ typedef struct star_data {
     char *name; // Star name (if available)
 } star_data_t;
 
-typedef struct render_data {
-  char render; 
-  star_data_t *data;
-} render_data_t;
-
-render_data_t render_table[1 << 17];
+char render_table[1 << 17];
 // star_data_t stars[NUM_STARS];
 
 int main(int argc, char *argv[]) {
@@ -35,7 +31,7 @@ int main(int argc, char *argv[]) {
     camera.target = (Vector3){1.0, 0.0, 0.0};
     camera.fovy = 60.0;
     camera.projection = CAMERA_PERSPECTIVE;
-    FILE *star_file = fopen("hip_main.dat", "r");
+    FILE *hipparcos = fopen("hip_main.dat", "r");
     // FILE *orion = fopen("orion.csv", "r");
     // FILE *ursa_maj = fopen("ursa_major.csv", "r");
     FILE *constellations = fopen("constellations.csv", "r");
@@ -43,25 +39,38 @@ int main(int argc, char *argv[]) {
 
     // Parse star data and load the array with more easily-drawn values
     char *line = NULL;
-    int i = 0;
+    int num_stars = 0;
     size_t len;
 
     while (getline(&line, &len, constellations) > 0) {
         unsigned index = (unsigned)strtol(line, NULL, 10);
         // printf("%b\n", index & mask);
         // printf("%d", hash_table[hash(index)]);
-        render_table[index].render = 1;
+        render_table[index] = 1;
         free(line);
         line = NULL;
+        num_stars++;
     }
 
-    while (getline(&line, &len, star_file) > 0) {
-        // Skip the second column, I just haven't removed them yet
-        star_data_t *star = malloc(sizeof(star_data_t));
+    printf("%d\n", num_stars);
+
+    star_data_t *stars[num_stars];
+
+    int hip_stars = 0;
+    while (getline(&line, &len, hipparcos) > 0) {
         char *token = strtok(line, "|");
         unsigned id = (unsigned)strtol(token, NULL, 10);
-        render_table[id].data = star;
+
+        if (!render_table[id]) {
+            continue;
+        }
+        star_data_t *star = malloc(sizeof(star_data_t));
+        stars[hip_stars] = star;
+        hip_stars++;
+
         star->name = ""; // strtok(NULL, "|");
+
+        // Skip the second column, I just haven't removed them yet
         token = strtok(NULL, "|");
         char *ra_str = strtok(NULL, "|");
         char *dec_str = strtok(NULL, "|");
@@ -87,8 +96,38 @@ int main(int argc, char *argv[]) {
         free(line);
         line = NULL;
         star = NULL;
-        i++;
     }
+    printf("%d\n", hip_stars);
+
+    /* 
+     * Instancing code that I'm not really using but think could be cool?
+     */
+    // Matrix *transforms = (Matrix *)RL_CALLOC(hip_stars, sizeof(Matrix));
+    // Mesh sphere = GenMeshSphere(1.0, 10, 10);
+    // Material matInstances = LoadMaterialDefault();
+    // matInstances.maps[MATERIAL_MAP_DIFFUSE].color = RAYWHITE;
+
+    // The array can hold num_stars amount of stars but i contains the
+    // number of stars that we actually found in the catalogue (for some
+    // reason the data is missing 104 stars or so?
+    // for (int j = 0; j < hip_stars; j++) {
+    //     if (stars[j] == NULL)
+    //         continue;
+    //
+    //     star_data_t star = *stars[j];
+    //     // Calculate position and scaling
+    //     double x = STAR_DIST * cos(star.dec) * cos(star.ra);
+    //     double z = STAR_DIST * cos(star.dec) * sin(star.ra);
+    //     double y = STAR_DIST * sin(star.dec);
+    //     double radius = 1 / exp(star.vis_mag);
+    //     radius = radius < MIN_RADIUS ? MIN_RADIUS : radius;
+    //     radius = radius > MAX_RADIUS ? MAX_RADIUS : radius;
+    //
+    //     // Calculate 
+    //     Matrix translation = MatrixTranslate(x, y, z);
+    //     Matrix scale = MatrixScale(radius, radius, radius);
+    //     transforms[j] = MatrixMultiply(scale, translation);
+    // }
     // free(line);
     SetTargetFPS(144);
 
@@ -97,30 +136,33 @@ int main(int argc, char *argv[]) {
         BeginDrawing();
         ClearBackground(BLACK);
         BeginMode3D(camera);
-        for (int i = 0; i < 1 << 17; i++) {
-            if (render_table[i].render) {
-                star_data_t star = *render_table[i].data;
-                double x = STAR_DIST * cos(star.dec) * cos(star.ra);
-                double z = STAR_DIST * cos(star.dec) * sin(star.ra);
-                double y = STAR_DIST * sin(star.dec);
-                Vector3 pos = {x, y, z};
-                double radius = 1 / exp(star.vis_mag);
-                radius = radius < MIN_RADIUS ? MIN_RADIUS : radius;
-                radius = radius > MAX_RADIUS ? MAX_RADIUS : radius;
-                DrawSphere(pos, radius, RAYWHITE);
-            }
-        }
+          for (int j = 0; j < hip_stars; j++) {
+              if (stars[j] == NULL)
+                  continue;
+
+              star_data_t star = *stars[j];
+              // Calculate position and scaling
+              double x = STAR_DIST * cos(star.dec) * cos(star.ra);
+              double z = STAR_DIST * cos(star.dec) * sin(star.ra);
+              double y = STAR_DIST * sin(star.dec);
+              double radius = 1 / exp(star.vis_mag);
+              radius = radius < MIN_RADIUS ? MIN_RADIUS : radius;
+              radius = radius > MAX_RADIUS ? MAX_RADIUS : radius;
+              Vector3 pos = {x, y, z};
+              DrawSphereEx(pos, radius, 5, 5, RAYWHITE);
+          }
+          // DrawMeshInstanced(sphere, matInstances, transforms, hip_stars);
         EndMode3D();
         EndDrawing();
     }
-    fclose(star_file);
+    fclose(hipparcos);
+    fclose(constellations);
+    // RL_FREE(transforms);
     // fclose(ursa_maj);
     // fclose(orion);
-    for (int i = 0; i < 1 << 17; i++) {
-      if (render_table[i].data != NULL) {
-        free(render_table[i].data);
-        render_table[i].data = NULL;
-    }
+    for (int j = 0; j < hip_stars; j++) {
+        free(stars[j]);
+        stars[hip_stars] = NULL;
     }
     CloseWindow();
     return 0;
